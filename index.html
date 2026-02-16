@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nitro Racer Pro</title>
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7606918922536287" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background: #000; font-family: 'Arial', sans-serif; }
+        canvas { display: block; margin: 0 auto; }
+    </style>
+</head>
+<body>
+<script>
+let player, coins, enemies, road, score = 0, totalCoins, scoreText, nitro = false;
+let selectedCar = 'car1', gameStarted = false;
+
+// Assets fix: Images ko labs.phaser.io se connect kiya taaki green box na aaye
+const carAssets = {
+    'car1': { name: 'City Car', price: 0, scale: 0.7, url: 'https://labs.phaser.io/assets/sprites/car-yellow.png' },
+    'car3': { name: 'Red Fire', price: 250, scale: 0.6, url: 'https://labs.phaser.io/assets/sprites/car-red.png' },
+    'car4': { name: 'Blue Lambo', price: 500, scale: 0.7, url: 'https://labs.phaser.io/assets/sprites/car95.png' }
+};
+
+const config = {
+    type: Phaser.AUTO,
+    width: 400,
+    height: window.innerHeight,
+    physics: { default: 'arcade', arcade: { debug: false } },
+    scene: { preload: preload, create: create, update: update }
+};
+
+const game = new Phaser.Game(config);
+
+function preload() {
+    this.load.image('road', 'https://labs.phaser.io/assets/skies/space3.png');
+    this.load.image('coin', 'https://labs.phaser.io/assets/sprites/coin.png');
+    this.load.image('enemy', 'https://labs.phaser.io/assets/sprites/bsquadron1.png');
+    Object.keys(carAssets).forEach(key => this.load.image(key, carAssets[key].url));
+}
+
+function create() {
+    totalCoins = parseInt(localStorage.getItem('totalCoins')) || 0;
+    road = this.add.tileSprite(200, config.height / 2, 400, config.height, 'road');
+    showMenu.call(this);
+}
+
+function showMenu() {
+    this.children.removeAll();
+    gameStarted = false;
+
+    this.add.text(200, 50, 'CAR GARAGE', { fontSize: '35px', fill: '#FFD700', fontStyle: 'bold' }).setOrigin(0.5);
+    this.add.text(200, 100, '💰 Coins: ' + totalCoins, { fontSize: '22px', fill: '#FFF' }).setOrigin(0.5);
+
+    let yPos = 180; 
+    Object.keys(carAssets).forEach(key => {
+        let isUnlocked = localStorage.getItem('unlocked_' + key) || key === 'car1';
+        
+        let carImg = this.add.image(100, yPos, key);
+        
+        if (key === 'car1') {
+            carImg.setScale(0.9).setAngle(90);
+        } else if (key === 'car4') {
+            carImg.setScale(1.1).setTint(0x00aaff);
+        } else {
+            carImg.setScale(0.6);
+        }
+
+        let label = isUnlocked ? `SELECT ${carAssets[key].name}` : `BUY: 💰${carAssets[key].price}`;
+        let btn = this.add.text(250, yPos, label, { 
+            fontSize: '18px', 
+            fill: isUnlocked ? '#00FF00' : '#FF4444',
+            fontStyle: 'bold'
+        }).setOrigin(0.5).setInteractive();
+
+        btn.on('pointerdown', () => {
+            if (isUnlocked) {
+                selectedCar = key;
+                startRace.call(this);
+            } else if (totalCoins >= carAssets[key].price) {
+                totalCoins -= carAssets[key].price;
+                saveData('unlocked_' + key, 'true');
+                saveData('totalCoins', totalCoins);
+                showMenu.call(this);
+            } else {
+                alert("Coins kam hain!");
+            }
+        });
+        yPos += 110; 
+    });
+
+    let adBtn = this.add.text(200, config.height - 60, '📺 WATCH AD (+50 Coins)', { 
+        fontSize: '18px', fill: '#00ffff', backgroundColor: '#222', padding: 10 
+    }).setOrigin(0.5).setInteractive();
+
+    adBtn.on('pointerdown', () => {
+        adBtn.setText('Loading Ad...');
+        
+        // AdMob Rewarded Ad Call using your ID: ca-app-pub-7606918922536287/8557023426
+        if (typeof adbreak !== 'undefined') {
+            adbreak({
+                type: 'reward',
+                name: 'extra_coins',
+                beforeAd: () => { console.log('Ad starting'); },
+                afterAd: () => { console.log('Ad finished'); },
+                beforeReward: (showAdFn) => { showAdFn(); },
+                adDismissed: () => { showMenu.call(this); },
+                adViewed: () => {
+                    totalCoins += 50;
+                    saveData('totalCoins', totalCoins);
+                    alert("Reward: 50 Coins Added!");
+                    showMenu.call(this);
+                }
+            });
+        } else {
+            // Fallback agar internet slow ho ya ad load na ho
+            setTimeout(() => {
+                totalCoins += 50;
+                saveData('totalCoins', totalCoins);
+                alert("Reward: 50 Coins Added!");
+                showMenu.call(this);
+            }, 2000);
+        }
+    });
+}
+
+function saveData(key, value) {
+    localStorage.setItem(key, value);
+}
+
+function startRace() {
+    this.children.removeAll();
+    road = this.add.tileSprite(200, config.height / 2, 400, config.height, 'road');
+    
+    player = this.physics.add.sprite(200, config.height - 100, selectedCar);
+    player.setCollideWorldBounds(true).setScale(carAssets[selectedCar].scale);
+    
+    if(selectedCar === 'car4') player.setTint(0x00aaff);
+    
+    coins = this.physics.add.group();
+    enemies = this.physics.add.group();
+    scoreText = this.add.text(20, 20, 'Score: 0', { fontSize: '20px', fill: '#FFF' });
+
+    gameStarted = true;
+
+    this.input.on('pointerdown', (p) => { 
+        nitro = true; 
+        player.setVelocityX(p.x < 200 ? -180 : 180); 
+    });
+    
+    this.input.on('pointerup', () => { 
+        nitro = false; 
+        player.setVelocityX(0); 
+    });
+
+    this.time.addEvent({ delay: 1500, callback: addEnemy, callbackScope: this, loop: true });
+    this.time.addEvent({ delay: 2500, callback: addCoin, callbackScope: this, loop: true });
+
+    this.physics.add.overlap(player, coins, collectCoin, null, this);
+    this.physics.add.collider(player, enemies, gameOver, null, this);
+}
+
+function update() {
+    if (!gameStarted) return;
+    road.tilePositionY -= nitro ? 10 : 5;
+    if (nitro) player.setAlpha(0.7); else player.setAlpha(1);
+}
+
+function addCoin() {
+    if(!gameStarted) return;
+    let c = coins.create(Phaser.Math.Between(50, 350), -50, 'coin');
+    c.setVelocityY(200);
+}
+
+function addEnemy() {
+    if(!gameStarted) return;
+    let e = enemies.create(Phaser.Math.Between(50, 350), -100, 'enemy');
+    e.setScale(0.6).setFlipY(true);
+    e.setVelocityY(nitro ? 350 : 250);
+}
+
+function collectCoin(p, c) {
+    c.destroy();
+    score += 5;
+    totalCoins += 2;
+    saveData('totalCoins', totalCoins);
+    scoreText.setText('Score: ' + score);
+}
+
+function gameOver() {
+    gameStarted = false;
+    this.physics.pause();
+    player.setTint(0xff0000);
+    this.add.text(200, config.height/2, 'CRASHED!\nTap to Repair', { fontSize: '30px', fill: '#fff', align: 'center', fontStyle: 'bold' }).setOrigin(0.5).setInteractive().on('pointerdown', () => this.scene.restart());
+}
+</script>
+</body>
+</html>
